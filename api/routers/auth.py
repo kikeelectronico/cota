@@ -17,9 +17,9 @@ CHALLENGE_EXPIRATION_TIME = 60
 TOKEN_EXPIRATION_TIME = 60
 
 @router.get("/auth/challenge")
-async def create_challenge(device_id: str):
+async def create_challenge(sn: str):
 
-    device = db.devices.find_one({"_id": device_id})
+    device = db.devices.find_one({"sn": sn})
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
@@ -27,25 +27,25 @@ async def create_challenge(device_id: str):
     expires_at = time.time() + CHALLENGE_EXPIRATION_TIME
 
     db.challenges.insert_one({
-        "device_id": device_id,
+        "sn": sn,
         "challenge": challenge,
         "expires_at": expires_at
     })
 
     return {
-        "device_id": device_id,
+        "sn": sn,
         "challenge": challenge,
         "expires_at": expires_at
     }
 
 class ChallegeIn(BaseModel):
-    device_id: str
+    sn: str
     challenge: str
     expires_at: int
     signature: str
 
 
-@router.post("/auth/verify")
+@router.post("/auth/token")
 async def verify_device_auth(body: ChallegeIn):
     challenge = body.json()
 
@@ -54,7 +54,7 @@ async def verify_device_auth(body: ChallegeIn):
         raise HTTPException(status_code=403, detail="Expired challenge")
 
     challenge_entry = db.challenges.find_one({
-        "device_id": challenge["device_id"],
+        "sn": challenge["sn"],
         "challenge": challenge["challenge"]
     })
 
@@ -62,7 +62,7 @@ async def verify_device_auth(body: ChallegeIn):
         raise HTTPException(status_code=403, detail="Invalid challenge")
 
     # Get the device public key
-    device = db.devices.find_one({"_id": challenge["device_id"]}, {"public_key": 1})
+    device = db.devices.find_one({"sn": challenge["sn"]}, {"public_key": 1})
     if not device or "public_key" not in device:
         raise HTTPException(status_code=404, detail="Device not found or without public key")
 
@@ -87,7 +87,7 @@ async def verify_device_auth(body: ChallegeIn):
     token = secrets.token_hex(32)
     expires_at = time.time() + TOKEN_EXPIRATION_TIME
 
-    filter = {"_id": challenge["device_id"]}
+    filter = {"sn": challenge["sn"]}
     data = {
         "access_token": {
             "token": token,
@@ -101,7 +101,7 @@ async def verify_device_auth(body: ChallegeIn):
         raise HTTPException(status_code=500, detail="Unable to create the access token")
         
     return {
-        "device_id": challenge["device_id"],
+        "sn": challenge["sn"],
         "access_token": token,
         "expires_at": expires_at
     }
